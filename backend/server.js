@@ -3,6 +3,33 @@ const cors = require('cors');
 const path = require('path');
 const db = require('./database');
 
+// Load environment variables from root .env file if it exists (for local development)
+try {
+  const fs = require('fs');
+  const envPath = path.join(__dirname, '../.env');
+  if (fs.existsSync(envPath)) {
+    const envConfig = fs.readFileSync(envPath, 'utf8');
+    envConfig.split('\n').forEach(line => {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let value = match[2] || '';
+        // Remove quotes if present
+        if (value.length > 0 && value.charAt(0) === '"' && value.charAt(value.length - 1) === '"') {
+          value = value.substring(1, value.length - 1);
+        } else if (value.length > 0 && value.charAt(0) === "'" && value.charAt(value.length - 1) === "'") {
+          value = value.substring(1, value.length - 1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = value.trim();
+        }
+      }
+    });
+  }
+} catch (e) {
+  console.log('No local .env file loaded:', e.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -99,6 +126,124 @@ app.put('/api/auth/profile', (req, res) => {
     }
     res.json({ success: true });
   });
+});
+
+// News API Proxy - Top Headlines
+app.get('/api/news/top-headlines', async (req, res) => {
+  try {
+    const apiKey = process.env.NEWSAPI_KEY || process.env.VITE_NEWSAPI_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'News API key not configured on server' });
+    }
+
+    const { country = 'us', category, pageSize = 12, page = 1 } = req.query;
+    
+    const queryParams = new URLSearchParams({
+      country,
+      pageSize,
+      page,
+    });
+    if (category) {
+      queryParams.append('category', category);
+    }
+
+    const url = `https://newsapi.org/v2/top-headlines?${queryParams.toString()}`;
+    const response = await fetch(url, {
+      headers: {
+        'X-Api-Key': apiKey,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching headlines:', error);
+    res.status(500).json({ error: 'Failed to fetch news from News API' });
+  }
+});
+
+// News API Proxy - Everything
+app.get('/api/news/everything', async (req, res) => {
+  try {
+    const apiKey = process.env.NEWSAPI_KEY || process.env.VITE_NEWSAPI_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'News API key not configured on server' });
+    }
+
+    const { q, sources, sortBy = 'publishedAt', language = 'en', pageSize = 12, page = 1 } = req.query;
+    
+    if (!q && !sources) {
+      return res.status(400).json({ error: 'Query parameter "q" or "sources" is required' });
+    }
+
+    const queryParams = new URLSearchParams({
+      sortBy,
+      language,
+      pageSize,
+      page,
+    });
+    if (q) queryParams.append('q', q);
+    if (sources) queryParams.append('sources', sources);
+
+    const url = `https://newsapi.org/v2/everything?${queryParams.toString()}`;
+    const response = await fetch(url, {
+      headers: {
+        'X-Api-Key': apiKey,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching search results:', error);
+    res.status(500).json({ error: 'Failed to fetch news from News API' });
+  }
+});
+
+// Groq AI Proxy - Summarize
+app.post('/api/news/summarize', async (req, res) => {
+  try {
+    const apiKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Groq API key not configured on server' });
+    }
+
+    const { article } = req.body;
+    if (!article) {
+      return res.status(400).json({ error: 'Article content is required' });
+    }
+
+    const prompt = `Summarize the following news article in exactly 3 bullet points. Focus on business or industry insight. Be concise. Do NOT include any introductory text, heading, or preamble — start directly with the first bullet point.\n\nArticle title: ${article.title}\nDescription: ${article.description ?? 'N/A'}\nContent: ${article.content ?? 'N/A'}`;
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.6,
+        max_tokens: 250,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    res.json(data);
+  } catch (error) {
+    console.error('Error summarizing article:', error);
+    res.status(500).json({ error: 'Failed to summarize article' });
+  }
 });
 
 // Anything that doesn't match an API route, send back the index.html file

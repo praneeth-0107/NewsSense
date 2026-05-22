@@ -1,6 +1,6 @@
 import type { NewsCategory, UserProfile } from '../types';
 
-const API_BASE = window.location.origin.includes('localhost')
+export const API_BASE = window.location.origin.includes('localhost')
   ? 'http://localhost:3001/api'
   : '/api';
 

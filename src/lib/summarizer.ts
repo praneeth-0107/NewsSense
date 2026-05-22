@@ -1,27 +1,13 @@
 import type { Article } from '../types';
-
-const GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY;
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+import { API_BASE } from './api';
 
 export async function summarizeArticle(article: Article): Promise<string> {
-  if (!GROQ_KEY) {
-    throw new Error('No Groq API key configured. Set VITE_GROQ_API_KEY in .env');
-  }
-
-  const prompt = `Summarize the following news article in exactly 3 bullet points. Focus on business or industry insight. Be concise. Do NOT include any introductory text, heading, or preamble — start directly with the first bullet point.\n\nArticle title: ${article.title}\nDescription: ${article.description ?? 'N/A'}\nContent: ${article.content ?? 'N/A'}`;
-
-  const response = await fetch(GROQ_URL, {
+  const response = await fetch(`${API_BASE}/news/summarize`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${GROQ_KEY}`,
     },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.6,
-      max_tokens: 250,
-    }),
+    body: JSON.stringify({ article }),
   });
 
   if (!response.ok) {
@@ -30,7 +16,7 @@ export async function summarizeArticle(article: Article): Promise<string> {
 
     try {
       const json = JSON.parse(errorBody);
-      errorMessage = json.error?.message || json.message || JSON.stringify(json);
+      errorMessage = json.error?.message || json.error || json.message || JSON.stringify(json);
     } catch {
       // Keep raw text if JSON parsing fails.
     }
